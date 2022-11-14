@@ -11,6 +11,10 @@ import pandas as pd
 import torchvision
 import torch.cuda.nvtx as nvtx
 
+import os
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ['CUDA_VISIBLE_DEVICES'] = "0"
+
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
@@ -20,13 +24,16 @@ class Net(nn.Module):
         self.fc1 = nn.Linear(320, 50) #4*4*20
         self.fc2 = nn.Linear(50, 10)
     def forward(self, x):
-
         x = F.relu(F.max_pool2d(self.conv1(x), 2))
         x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
         x = x.view(-1, 320)
+        nvtx.range_push("fc1")
         x = F.relu(self.fc1(x))
+        nvtx.range_pop()
         x = F.dropout(x, training=self.training)
+        nvtx.range_push("fc2")
         x = self.fc2(x)
+        nvtx.range_pop()
         return F.log_softmax(x,dim=1)
 
 batch_size=512
@@ -59,7 +66,8 @@ test_loader = torch.utils.data.DataLoader(
   batch_size=batch_size, shuffle=False)
 
 
-
+model.cuda()
+criterion.cuda()
 nvtx.range_push("Batch 0")
 nvtx.range_push("Load Data")
 
@@ -67,6 +75,8 @@ for i in range(epoch):
     for batch_idx, (data,label) in enumerate(train_loader):
         nvtx.range_pop(); nvtx.range_push("Forward")
         #输出值
+        data = data.cuda()
+        label = label.cuda()
         outputs = model(data)
         nvtx.range_pop(); nvtx.range_push("Calculate Loss/Sync")
         #损失值
@@ -78,17 +88,17 @@ for i in range(epoch):
         nvtx.range_pop(); nvtx.range_push("SGD")
         optimizer.step()
         nvtx.range_pop(); nvtx.range_pop()
-        nvtx.range_push("Batch " + str(i+1)); nvtx.range_push("Load Data")
+        nvtx.range_push("Batch " + str(batch_idx+1)); nvtx.range_push("Load Data")
         #记录误差
         print('epoch{},Train loss{:.6f},Dealed/Records:{}/{}'.format(i,loss/batch_size,(batch_idx+1)*batch_size,60000))
-        if batch_idx%20==0:
-            step+=1
-            loss_holder.append([step,loss/batch_size])
-        #模型性能有所提升则保存模型，并更新loss_value
-        if batch_idx%20==0 and loss<loss_value:
-            torch.save(model,'model.ckpt')
-            loss_value=loss
-        if batch_idx == 3:
+        # if batch_idx%20==0:
+        #     step+=1
+        #     loss_holder.append([step,loss/batch_size])
+        # #模型性能有所提升则保存模型，并更新loss_value
+        # if batch_idx%20==0 and loss<loss_value:
+        #     torch.save(model,'model.ckpt')
+        #     loss_value=loss
+        if batch_idx == 5:
             break
     break
 

@@ -32,7 +32,7 @@ nvtx.range_pop()
 ### step2: run nsys
 
 ```bash
-nsys profile -t nvtx,osrt --force-overwrite=true --stats=true --output=quickstart python nvtx_torch.py
+nsys profile --output=res python nvtx_torch.py
 ```
 
 ### step3: visualize
