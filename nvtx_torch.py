@@ -10,6 +10,8 @@ import torch.nn.functional as F
 import pandas as pd
 import torchvision
 import torch.cuda.nvtx as nvtx
+#import nvidia_dlprof_pytorch_nvtx as nvtx
+#nvtx.init(enable_function_stack=True)
 
 import os
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -23,17 +25,21 @@ class Net(nn.Module):
         self.conv2_drop = nn.Dropout2d()
         self.fc1 = nn.Linear(320, 50) #4*4*20
         self.fc2 = nn.Linear(50, 10)
-    def forward(self, x):
+    def forward(self, x, batch_id):
         x = F.relu(F.max_pool2d(self.conv1(x), 2))
         x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
         x = x.view(-1, 320)
-        nvtx.range_push("fc1")
+        if batch_id > 0:
+            nvtx.range_push("fc1")
         x = F.relu(self.fc1(x))
-        nvtx.range_pop()
+        if batch_id > 0:
+            nvtx.range_pop()
         x = F.dropout(x, training=self.training)
-        nvtx.range_push("fc2")
+        if batch_id > 0:
+            nvtx.range_push("fc2")
         x = self.fc2(x)
-        nvtx.range_pop()
+        if batch_id > 0:
+            nvtx.range_pop()
         return F.log_softmax(x,dim=1)
 
 batch_size=512
@@ -68,24 +74,30 @@ test_loader = torch.utils.data.DataLoader(
 
 model.cuda()
 criterion.cuda()
-nvtx.range_push("Batch 0")
-nvtx.range_push("Load Data")
+#nvtx.range_push("Batch 0")
+#nvtx.range_push("Load Data")
 
-for i in range(epoch):
+
+with torch.autograd.profiler.emit_nvtx():
+  for i in range(epoch):
     for batch_idx, (data,label) in enumerate(train_loader):
-        nvtx.range_pop(); nvtx.range_push("Forward")
+        if batch_idx > 0 : 
+            nvtx.range_pop(); nvtx.range_push("Forward")
         #输出值
         data = data.cuda()
         label = label.cuda()
-        outputs = model(data)
-        nvtx.range_pop(); nvtx.range_push("Calculate Loss/Sync")
+        outputs = model(data, batch_idx)
+        if batch_idx > 0 : 
+            nvtx.range_pop(); nvtx.range_push("Calculate Loss/Sync")
         #损失值
         loss = criterion(outputs, label)
         #反向传播，将所有梯度的参数清0，否则该步的梯度会和前面已经计算的梯度累乘
         optimizer.zero_grad()
-        nvtx.range_pop(); nvtx.range_push("Backward")
+        if batch_idx > 0: 
+            nvtx.range_pop(); nvtx.range_push("Backward")
         loss.backward()
-        nvtx.range_pop(); nvtx.range_push("SGD")
+        if batch_idx > 0: 
+            nvtx.range_pop(); nvtx.range_push("SGD")
         optimizer.step()
         nvtx.range_pop(); nvtx.range_pop()
         nvtx.range_push("Batch " + str(batch_idx+1)); nvtx.range_push("Load Data")

@@ -4,6 +4,7 @@
 
 ### step1: add nvtx.range_push() nvtx.range_pop()
 
+#### step 1.1
 ```
 import torch.cuda.nvtx as nvtx 
 nvtx.range_push("Batch 0") 
@@ -27,6 +28,12 @@ for i, (input_data, target) in enumerate(train_loader):
 
 nvtx.range_pop()
 nvtx.range_pop() 
+```
+
+#### step 1.2 (backward layer could be recognized by seq=N)
+```
+with torch.autograd.profiler.emit_nvtx():
+    for ...
 ```
 
 ### step2: run nsys
